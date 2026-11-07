@@ -1,0 +1,7 @@
+[package]
+name = "atomic_writes_03"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tempfile = "3.27.0"

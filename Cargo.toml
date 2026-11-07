@@ -1,0 +1,5 @@
+[workspace]
+resolver = "2"
+members = ["atomic_writes/atomic_writes_01", "atomic_writes/atomic_writes_02", "atomic_writes/atomic_writes_03","buff_reader_writer/buff_reader_writer_example01", "buff_reader_writer/buff_reader_writer_example02", "buff_reader_writer/buff_reader_writer_example03",
+    "simple_logging_function/example01",
+]
