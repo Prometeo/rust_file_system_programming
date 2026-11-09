@@ -1,5 +1,5 @@
 [workspace]
 resolver = "2"
 members = ["atomic_writes/atomic_writes_01", "atomic_writes/atomic_writes_02", "atomic_writes/atomic_writes_03","buff_reader_writer/buff_reader_writer_example01", "buff_reader_writer/buff_reader_writer_example02", "buff_reader_writer/buff_reader_writer_example03", "directories/directories_01", "directories/directories_02", "file_encodibng/file_encoding_01", "file_encodibng/file_encoding_02", "metadata_attributes/metadata_attributes_01", "metadata_attributes/metadata_attributes_02", "metadata_attributes/metadata_attributes_03", "metadata_attributes/metadata_attributes_04", "metadata_attributes/metadata_attributes_05", "metadata_attributes/metadata_attributes_compare_snapshots",
-    "simple_logging_function/example01",
+    "simple_logging_function/example01", "working_with_paths/working_with_paths_01", "working_with_paths/working_with_paths_02", "working_with_paths/working_with_paths_03", "working_with_paths/working_with_paths_04", "working_with_paths/working_with_paths_05",
 ]
