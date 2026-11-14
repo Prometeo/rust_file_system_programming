@@ -1,0 +1,9 @@
+[package]
+name = "binary_data_example_04"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bincode = "3.0.0"
+byteorder = "1.5.0"
+serde = { version = "1.0.229", features = ["derive"] }
