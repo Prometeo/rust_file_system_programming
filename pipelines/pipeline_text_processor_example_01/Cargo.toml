@@ -1,0 +1,6 @@
+[package]
+name = "pipeline_text_processor_example_01"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
