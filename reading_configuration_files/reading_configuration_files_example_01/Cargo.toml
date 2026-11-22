@@ -1,0 +1,9 @@
+[package]
+name = "reading_configuration_files_example_01"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+figment = { version = "0.10.19", features = ["toml"] }
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.2.2"
