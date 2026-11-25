@@ -1,11 +1,86 @@
 use blake3::Hasher;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tar::Builder;
 use walkdir::WalkDir;
+
+// We define a truct to hold the results of our difference calculation.
+#[derive(Debug)]
+pub struct BackupDiff {
+    pub added_files: Vec<PathBuf>,
+    pub modified_files: Vec<PathBuf>,
+    pub deleted_files: Vec<PathBuf>,
+}
+
+pub fn compatre_manifest(
+    old_manifest: &BackupManifest,
+    new_manifest: &BackupManifest,
+) -> BackupDiff {
+    println!("Comparing current system state against previous backup manifest...");
+    println!("Comparing current system state against previous backup manifest...");
+    let mut diff = BackupDiff {
+        added_files: Vec::new(),
+        modified_files: Vec::new(),
+        deleted_files: Vec::new(),
+    };
+
+    // Step 1: We convert the old maifest into a high-speed HashMap
+    // The key is the file path. The value is a rederence to the FileRecord.
+    let mut old_files_map: HashMap<&PathBuf, &FileRecord> = HashMap::new();
+
+    for old_record in &old_manifest.files {
+        old_files_map.insert(&old_record.path, old_record);
+    }
+
+    // Step 2: We iterate through every file in the NEW manifest.
+    for new_record in &new_manifest.files {
+        // We ask the old HasjMap if it containes the path of this new file.
+        match old_files_map.remove(&new_record.path) {
+            // Case A: The  path exists in the old manifest.
+            Some(old_record) => {
+                // The file existed yesterday, and it exists today.
+                // We muts check if the contents have changed by comparing the hashes.
+                if old_record.content_hash != new_record.content_hash {
+                    // the hashes are different. The files has been modified.
+                    diff.modified_files.push(new_record.path.clone());
+                }
+
+                // If the hashes are identical, we do absolutely nothing.
+                // The file is unchanged and does not need to be backed up again
+            }
+
+            // Case B: The path does NOT exist in the old manifest.
+            None => {
+                // The file exists today, but the HashMap has no record of it.
+                // Therefore, it must be a newly created file.
+                diff.added_files.push(new_record.path.clone());
+            }
+        }
+    }
+
+    // Step 3: Identify Deleted Files.
+    // During Step 2, we used the remove() method on the HashMap when  we found a match.
+    // This means that by the end of step 2, any records left sitting inside
+    // the old_files_map must be files that existed yesterday, but were never
+    // found during todays's scan. Therefore, they have been deleted.
+
+    for (deleted_path, _) in old_files_map {
+        diff.deleted_files.push(deleted_path.clone());
+    }
+
+    println!(
+        "Diff complete. {} added, {} modified, {} deleted.",
+        diff.added_files.len(),
+        diff.modified_files.len(),
+        diff.deleted_files.len()
+    );
+    diff
+}
 
 // We define a struct to represent a single file in our backup source.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -157,6 +232,79 @@ pub fn generate_manifest(source_directory: &str) -> BackupManifest {
     println!("Scan complete. Indexed {} files.", manifest.files.len());
 
     manifest
+}
+
+pub fn create_tar_archive(
+    output_archive_path: &str,
+    source_root_directory: &str,
+    files_to_backup: Vec<PathBuf>,
+) -> io::Result<()> {
+    println!("Begining archiving process to {}...", output_archive_path);
+
+    // 1. We create the final output file where the archive we will be stored.
+    let archive_file = File::create(output_archive_path)?;
+
+    // 2. We wrap the output file where the archvive will be stored.
+    // The builder takes ownership of the file handle and will manage the
+    // complex header writing process for us
+    let mut tar_builder = Builder::new(archive_file);
+
+    let source_root_path = Path::new(source_root_directory);
+
+    // 3. We iterate through the specific list of files we identified as changed or new.
+    let mut files_archived = 0;
+
+    for absolute_file_path in files_to_backup {
+        // Before we put the file in the archive, we must calculate its relative path.
+        // If the absolute path is /home/user/project/data.txt, and the root is /home/usr/project,
+        // we only want to store "data.txt" in the archive.
+        // if we store absolute path in an archive, extracting them on a different computer
+        // can overwrite sensitive system folders.
+
+        let relative_path = match absolute_file_path.strip_prefix(source_root_path) {
+            Ok(rel) => rel,
+            Err(_) => {
+                // If the path stripping fails, it means the file is somehow outside of our root.
+                // We log the erroor and skip the file for safety.
+                eprintln!(
+                    "Error: Path {:?} is outside the source root. Skipping.",
+                    absolute_file_path
+                );
+                continue;
+            }
+        };
+
+        // 4. We open the physical file on the hard drive for reading.
+        let mut source_file = match File::open(&absolute_file_path) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!(
+                    "Warning: Could not open file for archiving: {:?}. Error: {}",
+                    absolute_file_path, e
+                );
+                continue;
+            }
+        };
+        // 5. We instruct the tar builder to append the file to the archive.
+        // We provide the safe relative path for the archive header, and a reference
+        // to the open file handle. The builder will stream the data from the soruce file
+        // direwctly into the archive efficiently.
+        if let Err(e) = tar_builder.append_file(relative_path, &mut source_file) {
+            eprintln!("Error appending {:?} to archive {}", relative_path, e);
+        } else {
+            files_archived += 1;
+        }
+    }
+
+    // 6.We finalize the archive.
+    // This writes the closing markers required by the tar specification.
+    tar_builder.into_inner()?;
+
+    println!(
+        "Archiving complet. Successfully bundled {} files.",
+        files_archived
+    );
+    Ok(())
 }
 
 fn main() {
