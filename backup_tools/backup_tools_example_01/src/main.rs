@@ -1,4 +1,6 @@
 use blake3::Hasher;
+use flate2::Compression;
+use flate2::write::GzEncoder;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -8,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tar::Builder;
 use walkdir::WalkDir;
+use chrono::Local;
 
 // We define a truct to hold the results of our difference calculation.
 #[derive(Debug)]
@@ -241,7 +244,7 @@ pub fn create_tar_archive(
 ) -> io::Result<()> {
     println!("Begining archiving process to {}...", output_archive_path);
 
-    // 1. We create the final output file where the archive we will be stored.
+    // 1. We create the final output file where the archive will be stored.
     let archive_file = File::create(output_archive_path)?;
 
     // 2. We wrap the output file where the archvive will be stored.
@@ -305,6 +308,120 @@ pub fn create_tar_archive(
         files_archived
     );
     Ok(())
+}
+
+pub fn create_compressed_archive(
+    output_archive_path: &str,
+    source_root_directory: &str,
+    files_to_backup: Vec<PathBuf>,
+) -> io::Result<()> {
+    println!("Beginning compressed archiving process...");
+
+    // 1. Create the final output file.
+    // We update th extension to tar.gz to indicate it is a compressed tarball.
+    let file_path_with_ext = format!("{}.tar.gz", output_archive_path);
+    let archive_file = File::create(&file_path_with_ext)?;
+
+    // 2. We wrap the physical file handle in a Gzip Encoder
+    // We set the compression level to Defult, which balances speed and size.
+    let gzip_encoder = GzEncoder::new(archive_file, Compression::default());
+
+    // 3. We wrap the Gzip Encoder inside the tar Builder.
+    // Because GzEncoder implements the Write trait, the tar builder accepts it
+    // exactly as if it were a normal file.
+    let mut tar_builder = Builder::new(gzip_encoder);
+
+    let source_root_path = Path::new(source_root_directory);
+    let mut files_archived = 0;
+
+    for absolute_file_path in files_to_backup {
+        if let Ok(relative_path) = absolute_file_path.strip_prefix(source_root_path) {
+            if let Ok(mut source_file) = File::open(&absolute_file_path) {
+                // The append process remains exactly the same as the previos function
+                // The data flows through the builder, into the encodder, and onto the disk.
+                if tar_builder
+                    .append_file(relative_path, &mut source_file)
+                    .is_ok()
+                {
+                    files_archived += 1;
+                }
+            }
+        }
+    }
+
+    // 4. Finalization
+    // Callin into_inner on the tar builder finishes the tar format and returns the encoder.
+    let encoder_result = tar_builder.into_inner()?;
+
+    //Calling finish on the encoder finalizes the gzip format and ensures everythin is written.
+    encoder_result.finish()?;
+
+    println!(
+        "Compresed archiving complete. Bundled {} files.",
+        files_archived
+    );
+    Ok(())
+}
+
+pub fn execute_backup_run(source_dir: &str, destination_dir: &str, previous_manifest_path: Option<&str>) -> io::Result<()> {
+    // 1. Ensure the destination directory exists safely.
+    fs::create_dir_all(destination_dir)?;
+
+    // 2. Generate a unique version string based on the current date and time.
+    // Example format: 2024-10-25_14-30-00
+    let timestamp_string = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+
+    // 3. Coonstruct the organized output paths based on the timestamp.
+    let base_name = format!("backup_{}", timestamp_string);
+
+    let mut manifest_output_path = PathBuf::from(destination_dir);
+    manifest_output_path.push(format!("{}_manifest.json", base_name));
+
+    let mut archive_output_path = PathBuf::from(destination_dir);
+    archive_output_path.push(&base_name); // The compression function adds .tar.gz
+
+    // 4. Generate the current snapshot manifest.
+    let current_manifest = generate_manifest(source_dir);
+
+    // 5. Determine which files to back up.
+    let files_to_backup = if let Some(old_manifest_path) = previous_manifest_path {
+        // If we have a previous manifest, we are performing an Incremental backup.
+        // We would  load the old manifest using serde_json here ...
+        // Let us assume we have loaded it into `old_manifest`.
+        // let old_manifest = load_manifest(old_manifest_path)?;
+
+        // We use our diff engine to find the changes.
+        // let diff = compare_manifest(&old_manifest, &current_manifest);
+
+        // We bundle the added and modified files together.
+        // let mut required_files = diff.added_files;
+        // required_files.extend(diff.modified_files);
+        // required_files
+
+        // p;aceholder for the compilation
+        Vec::new()
+
+    } else {
+        // If there is no previous manifest, we are performing a Full backup.
+        // We must extract every single path from the current manifest.
+        current_manifest.files.iter().map(|record| record.path.clone()).collect()
+    };
+
+    // 6. Execute the physical archiving process.
+    if !files_to_backup.is_empty() {
+        create_compressed_archive(archive_output_path.to_str().unwrap(), source_dir, files_to_backup)?;
+    } else {
+        println!("No changes detected. Skipping archive creation.");
+    }
+
+    // 7. Save the new manifest to the destination folder so it can act
+    // as the "previous_manifest" for tomorrow's run.
+
+    // current_manifest.save_to_file(&manifestr_ooutput_path)?;
+    println!("Backup run complete. Manifest saved as {:?}", manifest_output_path);
+    Ok(())
+
+
 }
 
 fn main() {

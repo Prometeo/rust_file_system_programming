@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 blake3 = "1.8.7"
+chrono = "0.4.45"
+flate2 = "1.1.11"
 serde = { version = "1.0.229", features = ["derive"] }
 tar = "0.4.46"
 walkdir = "2.5.1"
